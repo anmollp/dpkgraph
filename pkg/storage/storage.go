@@ -18,6 +18,7 @@ func NewStorage(filePath string) (*Storage, error) {
 	}
 	return &Storage{db: db}, nil
 }
+
 func (s *Storage) SaveGraph(g *graph.Graph) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte("graph"))

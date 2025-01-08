@@ -14,6 +14,7 @@ type Edge struct {
 	Label      string
 	Properties map[string]interface{}
 }
+
 type Graph struct {
 	Nodes map[string]*Node
 	Edges map[string][]*Edge
