@@ -23,13 +23,13 @@ A distributed system for building, querying, and sharing personal knowledge grap
     ```bash
     go run cmd/main.go
 
-| Method | Endpoint       | Description               |
-|--------|----------------|---------------------------|
-| POST   | `/nodes`       | Add a new node            |
-| GET    | `/nodes/:id`   | Get details of a node     |
-| DELETE | `/nodes/:id`   | Delete a node             |
-| POST   | `/edges`       | Add a new edge            |
-| GET    | `/edges/:id`   | Get edges for a node      |
+| Method | Endpoint                                   | Description           |
+|--------|--------------------------------------------|-----------------------|
+| POST   | `/nodes`                                   | Add a new node        |
+| GET    | `/nodes/:id`                               | Get details of a node |
+| DELETE | `/nodes/:id`                               | Delete a node         |
+| POST   | `/edges`                                   | Add a new edge        |
+| GET    | `/edges?from=<from>&to=<to>&label=<label>` | Get edges             |
 
 
 ### **Add TODOs as GitHub Issues**
