@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )
@@ -54,12 +55,48 @@ func (s *Server) AddEdge(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "edge added"})
 }
 
-func (s *Server) GetEdgesFromNode(c *gin.Context) {
-	id := c.Param("id")
-	edges, err := s.graph.GetEdgesFromNode(id)
+func (s *Server) GetEdgesByQuery(c *gin.Context) {
+	from := c.Query("from")
+	to := c.Query("to")
+	label := c.Query("label")
+
+	if from == "" && to == "" && label == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one query parameter (from, to, or label) is required"})
+		return
+	}
+	if from == "" {
+		from = "*"
+	}
+	if to == "" {
+		to = "*"
+	}
+	if label == "" {
+		label = "*"
+	}
+
+	pattern := fmt.Sprintf("%s->%s:%s", from, to, label)
+
+	edges, err := s.graph.SearchEdges(pattern)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if edges == nil {
+		c.JSON(http.StatusOK, gin.H{"message": "No edges found"})
 		return
 	}
 	c.JSON(http.StatusOK, edges)
+}
+
+func (s *Server) DeleteEdge(c *gin.Context) {
+	var edge EdgeRequest
+	if err := c.ShouldBindJSON(&edge); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	}
+	err := s.graph.DeleteEdge(edge.From, edge.To, edge.Label)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Edge deleted successfully"})
 }

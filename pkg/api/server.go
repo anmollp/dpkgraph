@@ -8,10 +8,10 @@ import (
 
 type Server struct {
 	graph   *graph.Graph
-	storage *storage.Storage
+	storage *storage.BoltStorage
 }
 
-func NewServer(graph *graph.Graph, storage *storage.Storage) *Server {
+func NewServer(graph *graph.Graph, storage *storage.BoltStorage) *Server {
 	return &Server{
 		graph:   graph,
 		storage: storage,
@@ -26,7 +26,8 @@ func (s *Server) Start(port string) error {
 	router.DELETE("/nodes/:id", s.DeleteNode)
 
 	router.POST("/edges", s.AddEdge)
-	router.GET("/edges/:id", s.GetEdgesFromNode)
+	router.GET("/edges", s.GetEdgesByQuery)
+	router.DELETE("/edges", s.DeleteEdge)
 
 	return router.Run(":" + port)
 }

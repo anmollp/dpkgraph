@@ -8,20 +8,24 @@ import (
 )
 
 func main() {
-	g := graph.NewGraph()
-	s, err := storage.NewStorage("graph.db")
+	boltStorage, err := storage.NewBoltStorage("dpkgraph.db")
 	if err != nil {
 		log.Fatalf("Failed to initialize storage: %v", err)
 	}
-	defer s.Close()
+	defer boltStorage.Close()
 
-	loadedGraph, err := s.LoadGraph()
-	if loadedGraph != nil && err != nil {
-		g = loadedGraph
-	} else {
-		log.Println("Starting with an empty graph")
+	g := graph.NewGraph(boltStorage)
+
+	if err := g.LoadNodes(); err != nil {
+		log.Fatalf("Failed to load nodes: %v", err)
 	}
 
-	server := api.NewServer(g, s)
-	log.Fatal(server.Start("8080"))
+	if err := g.LoadEdges(); err != nil {
+		log.Fatalf("Failed to load edges: %v", err)
+	}
+
+	server := api.NewServer(g, boltStorage)
+	if err := server.Start("8080"); err != nil {
+		log.Fatalf("Server failed: %v", err)
+	}
 }
