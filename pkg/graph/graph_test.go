@@ -225,3 +225,27 @@ func TestPersistence(t *testing.T) {
 		t.Fatalf("unexpected edge data after reload: %+v", edges[0])
 	}
 }
+
+func TestFindNodesByProperties(t *testing.T) {
+	testStorage := setupTestStorage(t)
+	g := NewGraph(testStorage)
+
+	_ = g.AddNode("1", "Person", map[string]interface{}{"name": "Alice", "type": "Person"})
+	_ = g.AddNode("2", "Person", map[string]interface{}{"name": "Bob", "type": "Person"})
+	_ = g.AddNode("3", "Place", map[string]interface{}{"name": "Wonderland", "type": "Place"})
+
+	result, err := g.FindNodesByProperties(map[string][]interface{}{"type": {"Person"}})
+	if err != nil || len(result) != 2 {
+		t.Fatalf("expected 2 nodes, got %v, err: %v", len(result), err)
+	}
+
+	result, err = g.FindNodesByProperties(map[string][]interface{}{"type": {"Animal"}})
+	if err != nil || len(result) != 0 {
+		t.Fatalf("expected 0 nodes, got %v, err: %v", len(result), err)
+	}
+
+	result, err = g.FindNodesByProperties(map[string][]interface{}{"type": {"Place"}, "name": {"Wonderland"}})
+	if err != nil || len(result) != 1 || result[0].ID != "3" {
+		t.Fatalf("expected node 3, got %v, err: %v", result[0].Label, err)
+	}
+}

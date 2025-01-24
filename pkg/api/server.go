@@ -24,6 +24,7 @@ func (s *Server) Start(port string) error {
 	router.POST("/nodes", s.AddNode)
 	router.GET("/nodes/:id", s.GetNode)
 	router.DELETE("/nodes/:id", s.DeleteNode)
+	router.GET("/nodes/search", s.FindNodesByProperties)
 
 	router.POST("/edges", s.AddEdge)
 	router.GET("/edges", s.GetEdgesByQuery)

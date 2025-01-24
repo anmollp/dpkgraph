@@ -100,3 +100,25 @@ func (s *Server) DeleteEdge(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Edge deleted successfully"})
 }
+
+func (s *Server) FindNodesByProperties(c *gin.Context) {
+	properties := make(map[string][]interface{})
+	for key, values := range c.Request.URL.Query() {
+		for _, value := range values {
+			properties[key] = append(properties[key], value)
+		}
+	}
+
+	if len(properties) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one property is required"})
+		return
+	}
+
+	nodes, err := s.graph.FindNodesByProperties(properties)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, nodes)
+}

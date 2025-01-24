@@ -53,6 +53,40 @@ func (g *Graph) GetNode(id string) (*storage_interface.Node, error) {
 	return node, nil
 }
 
+func (g *Graph) DeleteNode(id string) error {
+	if _, exists := g.Nodes[id]; !exists {
+		return fmt.Errorf("node with ID %s not found", id)
+	}
+	outEdgePattern := fmt.Sprintf("%s->*:*", id)
+	inEdgePattern := fmt.Sprintf("*->%s:*", id)
+	if err := g.RemoveEdges(outEdgePattern); err != nil {
+		return err
+	}
+	if err := g.RemoveEdges(inEdgePattern); err != nil {
+		return err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.Nodes, id)
+	return g.Storage.DeleteNode(id)
+}
+
+func (g *Graph) LoadNodes() error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.Storage == nil {
+		return nil
+	}
+	nodes, err := g.Storage.LoadNodes()
+	if err != nil {
+		return fmt.Errorf("failed to load nodes: %w", err)
+	}
+	for _, node := range nodes {
+		g.Nodes[node.ID] = node
+	}
+	return nil
+}
+
 func (g *Graph) AddEdge(from, to, label string, properties map[string]interface{}) error {
 	edgePattern := fmt.Sprintf("%s->%s:%s", from, to, label)
 	if edges, _ := g.SearchEdges(edgePattern); len(edges) != 0 {
@@ -86,22 +120,21 @@ func (g *Graph) AddEdge(from, to, label string, properties map[string]interface{
 	return nil
 }
 
-func (g *Graph) DeleteNode(id string) error {
-	if _, exists := g.Nodes[id]; !exists {
-		return fmt.Errorf("node with ID %s not found", id)
+func (g *Graph) SearchEdges(pattern string) ([]*storage_interface.Edge, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	var matchedEdges []*storage_interface.Edge
+	regexPattern := "^" + strings.ReplaceAll(regexp.QuoteMeta(pattern), "\\*", ".*") + "$"
+	re, err := regexp.Compile(regexPattern)
+	if err != nil {
+		return nil, err
 	}
-	outEdgePattern := fmt.Sprintf("%s->*:*", id)
-	inEdgePattern := fmt.Sprintf("*->%s:*", id)
-	if err := g.RemoveEdges(outEdgePattern); err != nil {
-		return err
+	for key, edge := range g.Edges {
+		if re.Match([]byte(key)) {
+			matchedEdges = append(matchedEdges, edge...)
+		}
 	}
-	if err := g.RemoveEdges(inEdgePattern); err != nil {
-		return err
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	delete(g.Nodes, id)
-	return g.Storage.DeleteNode(id)
+	return matchedEdges, nil
 }
 
 func (g *Graph) DeleteEdge(from, to, label string) error {
@@ -111,22 +144,6 @@ func (g *Graph) DeleteEdge(from, to, label string) error {
 		return err
 	}
 	return g.Storage.DeleteEdge(from, to, label)
-}
-
-func (g *Graph) LoadNodes() error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	if g.Storage == nil {
-		return nil
-	}
-	nodes, err := g.Storage.LoadNodes()
-	if err != nil {
-		return fmt.Errorf("failed to load nodes: %w", err)
-	}
-	for _, node := range nodes {
-		g.Nodes[node.ID] = node
-	}
-	return nil
 }
 
 func (g *Graph) LoadEdges() error {
@@ -146,23 +163,6 @@ func (g *Graph) LoadEdges() error {
 	return nil
 }
 
-func (g *Graph) SearchEdges(pattern string) ([]*storage_interface.Edge, error) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	var matchedEdges []*storage_interface.Edge
-	regexPattern := "^" + strings.ReplaceAll(regexp.QuoteMeta(pattern), "\\*", ".*") + "$"
-	re, err := regexp.Compile(regexPattern)
-	if err != nil {
-		return nil, err
-	}
-	for key, edge := range g.Edges {
-		if re.Match([]byte(key)) {
-			matchedEdges = append(matchedEdges, edge...)
-		}
-	}
-	return matchedEdges, nil
-}
-
 func (g *Graph) RemoveEdges(pattern string) error {
 	edgesToRemove, err := g.SearchEdges(pattern)
 	if err != nil {
@@ -174,4 +174,38 @@ func (g *Graph) RemoveEdges(pattern string) error {
 		delete(g.Edges, edge.GetKey())
 	}
 	return nil
+}
+func (g *Graph) FindNodesByProperties(properties map[string][]interface{}) ([]*storage_interface.Node, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	var matchedNodes []*storage_interface.Node
+	for _, node := range g.Nodes {
+		if matchProperties(node.Properties, properties) {
+			matchedNodes = append(matchedNodes, node)
+		}
+	}
+	return matchedNodes, nil
+}
+
+func matchProperties(nodeProps map[string]interface{}, searchProps map[string][]interface{}) bool {
+	for key, values := range searchProps {
+		nodeValue, exists := nodeProps[key]
+		if !exists {
+			return false
+		}
+
+		matchFound := false
+		for _, value := range values {
+			if nodeValue == value {
+				matchFound = true
+				break
+			}
+		}
+
+		if !matchFound {
+			return false
+		}
+	}
+	return true
 }
