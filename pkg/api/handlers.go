@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )
@@ -47,7 +46,7 @@ func (s *Server) AddEdge(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-	err := s.graph.AddEdge(edgeData.From, edgeData.To, edgeData.Label, edgeData.Properties)
+	err := s.graph.AddEdge(edgeData.From, edgeData.To, edgeData.Label, edgeData.Weight, edgeData.Properties)
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
@@ -60,23 +59,12 @@ func (s *Server) GetEdgesByQuery(c *gin.Context) {
 	to := c.Query("to")
 	label := c.Query("label")
 
-	if from == "" && to == "" && label == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one query parameter (from, to, or label) is required"})
+	if from == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Need from node to delete an edge"})
 		return
 	}
-	if from == "" {
-		from = "*"
-	}
-	if to == "" {
-		to = "*"
-	}
-	if label == "" {
-		label = "*"
-	}
 
-	pattern := fmt.Sprintf("%s->%s:%s", from, to, label)
-
-	edges, err := s.graph.SearchEdges(pattern)
+	edges, err := s.graph.GetEdge(from, to, label)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -93,10 +81,32 @@ func (s *Server) DeleteEdge(c *gin.Context) {
 	if err := c.ShouldBindJSON(&edge); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
-	err := s.graph.DeleteEdge(edge.From, edge.To, edge.Label)
+	err := s.graph.DeleteEdge(edge.From, "", "")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Edge deleted successfully"})
+}
+
+func (s *Server) FindNodesByProperties(c *gin.Context) {
+	properties := make(map[string][]interface{})
+	for key, values := range c.Request.URL.Query() {
+		for _, value := range values {
+			properties[key] = append(properties[key], value)
+		}
+	}
+
+	if len(properties) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one property is required"})
+		return
+	}
+
+	nodes, err := s.graph.FindNodesByProperties(properties)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, nodes)
 }

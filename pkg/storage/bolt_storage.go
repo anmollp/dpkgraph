@@ -101,29 +101,40 @@ func (b *BoltStorage) LoadEdges() ([]*storage_interface.Edge, error) {
 	return edges, nil
 }
 
-func (b *BoltStorage) DeleteNode(id string) error {
+func (b *BoltStorage) DeleteNodes(nodes []*storage_interface.Node) error {
 	return b.db.Update(func(tx *bbolt.Tx) error {
 		nodesBucket := tx.Bucket([]byte(nodesBucket))
 		if nodesBucket == nil {
 			return fmt.Errorf("nodes bucket does not exist")
 		}
-		return nodesBucket.Delete([]byte(id))
+		for _, node := range nodes {
+			err := nodesBucket.Delete([]byte(node.ID))
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
-func (b *BoltStorage) DeleteEdge(from, to, label string) error {
+func (b *BoltStorage) DeleteEdges(edges []*storage_interface.Edge) error {
 	return b.db.Update(func(tx *bbolt.Tx) error {
 		edgesBucket := tx.Bucket([]byte(edgesBucket))
 		if edgesBucket == nil {
 			return fmt.Errorf("edges bucket does not exist")
 		}
-		edgeKey := fmt.Sprintf("%s->%s:%s", from, to, label)
 
-		if edgesBucket.Get([]byte(edgeKey)) == nil {
-			return fmt.Errorf("edge %s does not exist", edgeKey)
+		for _, edge := range edges {
+			edgeKey := fmt.Sprintf("%s->%s:%s", edge.From, edge.To, edge.Label)
+			if edgesBucket.Get([]byte(edgeKey)) == nil {
+				return fmt.Errorf("edge %s does not exist", edgeKey)
+			}
+			if err := edgesBucket.Delete([]byte(edgeKey)); err != nil {
+				return err
+			}
+			fmt.Println("Delete successful")
 		}
-
-		return edgesBucket.Delete([]byte(edgeKey))
+		return nil
 	})
 }
 
