@@ -10,5 +10,6 @@ type EdgeRequest struct {
 	From       string                 `json:"from"`
 	To         string                 `json:"to"`
 	Label      string                 `json:"label"`
+	Weight     float64                `json:"weight"`
 	Properties map[string]interface{} `json:"properties"`
 }

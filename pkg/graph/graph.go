@@ -3,8 +3,6 @@ package graph
 import (
 	"dpkgraph/pkg/storage_interface"
 	"fmt"
-	"regexp"
-	"strings"
 	"sync"
 )
 
@@ -53,22 +51,35 @@ func (g *Graph) GetNode(id string) (*storage_interface.Node, error) {
 	return node, nil
 }
 
-func (g *Graph) DeleteNode(id string) error {
-	if _, exists := g.Nodes[id]; !exists {
-		return fmt.Errorf("node with ID %s not found", id)
+func (g *Graph) DeleteNode(nodeId string) error {
+	node, exists := g.Nodes[nodeId]
+	if !exists {
+		return fmt.Errorf("node with ID %s not found", nodeId)
 	}
-	outEdgePattern := fmt.Sprintf("%s->*:*", id)
-	inEdgePattern := fmt.Sprintf("*->%s:*", id)
-	if err := g.RemoveEdges(outEdgePattern); err != nil {
+
+	inDegree, err := g.InDegree(nodeId)
+	if err != nil {
 		return err
 	}
-	if err := g.RemoveEdges(inEdgePattern); err != nil {
-		return err
+
+	if inDegree > 0 {
+		return fmt.Errorf("node %s has incoming edges and cannot be deleted", nodeId)
 	}
+
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	delete(g.Nodes, id)
-	return g.Storage.DeleteNode(id)
+	outgoingEdges := g.Edges[nodeId]
+
+	if err := g.Storage.DeleteEdges(outgoingEdges); err != nil {
+		return fmt.Errorf("failed to delete outgoing edges for node %s: %w", nodeId, err)
+	}
+	delete(g.Edges, nodeId)
+
+	if err := g.Storage.DeleteNodes([]*storage_interface.Node{node}); err != nil {
+		return fmt.Errorf("failed to delete node %s from storage: %w", nodeId, err)
+	}
+	delete(g.Nodes, nodeId)
+	return nil
 }
 
 func (g *Graph) LoadNodes() error {
@@ -87,12 +98,7 @@ func (g *Graph) LoadNodes() error {
 	return nil
 }
 
-func (g *Graph) AddEdge(from, to, label string, properties map[string]interface{}) error {
-	edgePattern := fmt.Sprintf("%s->%s:%s", from, to, label)
-	if edges, _ := g.SearchEdges(edgePattern); len(edges) != 0 {
-		return fmt.Errorf("edge already exists")
-	}
-
+func (g *Graph) AddEdge(from, to, label string, weight float64, properties map[string]interface{}) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if _, exists := g.Nodes[from]; !exists {
@@ -103,15 +109,22 @@ func (g *Graph) AddEdge(from, to, label string, properties map[string]interface{
 		return fmt.Errorf("destination node %s not found", to)
 	}
 
+	edges, _ := g.Edges[from]
+	for _, edge := range edges {
+		if edge.From == from && edge.To == to && edge.Label == edge.Label {
+			return fmt.Errorf("edge from %v to %v with label %v already exists", from, to, label)
+		}
+	}
+
 	edge := &storage_interface.Edge{
 		From:       from,
 		To:         to,
 		Label:      label,
+		Weight:     weight,
 		Properties: properties,
 	}
 
-	edgeKey := edge.GetKey()
-	g.Edges[edgeKey] = append(g.Edges[edgeKey], edge)
+	g.Edges[from] = append(g.Edges[from], edge)
 	if g.Storage != nil {
 		if err := g.Storage.SaveEdge(edge); err != nil {
 			return fmt.Errorf("failed to save edge: %w", err)
@@ -120,30 +133,49 @@ func (g *Graph) AddEdge(from, to, label string, properties map[string]interface{
 	return nil
 }
 
-func (g *Graph) SearchEdges(pattern string) ([]*storage_interface.Edge, error) {
+func (g *Graph) GetEdge(from, to, label string) ([]*storage_interface.Edge, error) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	var matchedEdges []*storage_interface.Edge
-	regexPattern := "^" + strings.ReplaceAll(regexp.QuoteMeta(pattern), "\\*", ".*") + "$"
-	re, err := regexp.Compile(regexPattern)
-	if err != nil {
-		return nil, err
+
+	if _, exists := g.Nodes[from]; !exists {
+		return nil, fmt.Errorf("source node %s not found", from)
 	}
-	for key, edge := range g.Edges {
-		if re.Match([]byte(key)) {
-			matchedEdges = append(matchedEdges, edge...)
+
+	var matchedEdges []*storage_interface.Edge
+	for _, edge := range g.Edges[from] {
+		toMatch := to == "" || edge.To == to
+		labelMatch := label == "" || edge.Label == label
+		if toMatch && labelMatch {
+			matchedEdges = append(matchedEdges, edge)
 		}
 	}
 	return matchedEdges, nil
 }
 
 func (g *Graph) DeleteEdge(from, to, label string) error {
-	edgePattern := fmt.Sprintf("%s->%s:%s", from, to, label)
-	err := g.RemoveEdges(edgePattern)
-	if err != nil {
+	if _, exists := g.Nodes[from]; !exists {
+		return fmt.Errorf("source node %s not found", from)
+	}
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	var matchedEdges []*storage_interface.Edge
+	for _, edge := range g.Edges[from] {
+		toMatch := to == "" || edge.To == to
+		labelMatch := label == "" || edge.Label == label
+		if toMatch && labelMatch {
+			matchedEdges = append(matchedEdges, edge)
+
+		}
+	}
+	if err := g.Storage.DeleteEdges(matchedEdges); err != nil {
 		return err
 	}
-	return g.Storage.DeleteEdge(from, to, label)
+	for _, edge := range matchedEdges {
+		delete(g.Edges, edge.From)
+	}
+	return nil
 }
 
 func (g *Graph) LoadEdges() error {
@@ -157,24 +189,11 @@ func (g *Graph) LoadEdges() error {
 		return fmt.Errorf("failed to load edges: %w", err)
 	}
 	for _, edge := range edges {
-		edgeKey := edge.GetKey()
-		g.Edges[edgeKey] = append(g.Edges[edgeKey], edge)
+		g.Edges[edge.From] = append(g.Edges[edge.From], edge)
 	}
 	return nil
 }
 
-func (g *Graph) RemoveEdges(pattern string) error {
-	edgesToRemove, err := g.SearchEdges(pattern)
-	if err != nil {
-		return err
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	for _, edge := range edgesToRemove {
-		delete(g.Edges, edge.GetKey())
-	}
-	return nil
-}
 func (g *Graph) FindNodesByProperties(properties map[string][]interface{}) ([]*storage_interface.Node, error) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -208,4 +227,33 @@ func matchProperties(nodeProps map[string]interface{}, searchProps map[string][]
 		}
 	}
 	return true
+}
+
+func (g *Graph) InDegree(nodeId string) (int, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if _, exists := g.Nodes[nodeId]; !exists {
+		return 0, fmt.Errorf("node %s not found", nodeId)
+	}
+
+	count := 0
+	for _, edges := range g.Edges {
+		for _, edge := range edges {
+			if edge.To == nodeId {
+				count++
+			}
+		}
+	}
+	return count, nil
+}
+
+func (g *Graph) OutDegree(nodeId string) (int, error) {
+	g.mu.RLock()
+	g.mu.RUnlock()
+
+	if _, exists := g.Nodes[nodeId]; !exists {
+		return 0, fmt.Errorf("node %s not found", nodeId)
+	}
+	return len(g.Edges[nodeId]), nil
 }

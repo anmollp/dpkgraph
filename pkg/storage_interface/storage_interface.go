@@ -5,7 +5,7 @@ type Storage interface {
 	SaveEdge(edge *Edge) error
 	LoadNodes() ([]*Node, error)
 	LoadEdges() ([]*Edge, error)
-	DeleteNode(id string) error
-	DeleteEdge(sourceID, targetID, label string) error
+	DeleteNodes([]*Node) error
+	DeleteEdges([]*Edge) error
 	Close() error
 }
